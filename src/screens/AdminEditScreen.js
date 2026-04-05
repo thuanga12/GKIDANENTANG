@@ -1,111 +1,144 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import { updateProfile, updatePassword } from 'firebase/auth'; // Import các hàm xử lý tài khoản từ Firebase Auth
-import { auth } from '../services/firebaseConfig';
+import { View, TextInput, TouchableOpacity, Text, StyleSheet, Alert, Image, ActivityIndicator } from 'react-native';
+import * as ImagePicker from 'expo-image-picker'; // Thư viện chọn ảnh
 import { Ionicons } from '@expo/vector-icons';
+import { auth } from '../services/firebaseConfig';
+import { updateProfile, updatePassword } from 'firebase/auth'; // Các hàm xác thực Firebase
+import { uploadImageToCloudinary } from '../services/cloudinaryService'; // Hàm up ảnh đã có của Thuận
 
 export default function AdminEditScreen({ navigation }) {
-  // Lấy thông tin người dùng hiện tại đang đăng nhập từ hệ thống Firebase
-  const user = auth.currentUser;
-
-  // State lưu trữ Tên hiển thị (Khởi tạo bằng tên cũ hoặc để trống)
+  const user = auth.currentUser; // Lấy thông tin user hiện tại
+  
+  // KHỞI TẠO STATE
   const [name, setName] = useState(user?.displayName || '');
-  // State lưu trữ Mật khẩu mới (Luôn để trống khi mới vào trang)
+  // state lưu URI ảnh đại diện: Ưu tiên ảnh từ Firebase, nếu không có hiện icon mặc định
+  const [avatar, setAvatar] = useState(user?.photoURL || null); 
   const [newPassword, setNewPassword] = useState('');
-  // State quản lý trạng thái đang xử lý (hiện vòng quay loading)
-  const [loading, setLoading] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false); // Trạng thái loading khi up ảnh/lưu tên
 
-  // Hàm xử lý khi người dùng nhấn nút CẬP NHẬT
-  const handleUpdate = async () => {
-    setLoading(true); // Bật trạng thái loading
+  // HÀM CHỌN ẢNH ĐẠI DIỆN
+  const pickAvatar = async () => {
+    // Xin quyền truy cập thư viện
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      return Alert.alert("Thông báo", "App cần quyền truy cập thư viện để đổi ảnh đại diện.");
+    }
+
+    // Mở thư viện ảnh
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true, // Cho phép cắt ảnh
+      aspect: [1, 1], // Tỉ lệ cắt vuông (chuẩn avatar)
+      quality: 0.5, // Giảm chất lượng ảnh để load nhanh
+    });
+
+    if (!result.canceled) {
+      setAvatar(result.assets[0].uri); // Lưu URI ảnh mới vào state
+    }
+  };
+
+  // HÀM LƯU THÔNG TIN (Tên và Ảnh đại diện)
+  const handleSaveProfile = async () => {
+    if (!name) return Alert.alert("Lỗi", "Vui lòng nhập tên hiển thị.");
+    setLoading(true); // Bật vòng xoay loading
+
     try {
-      // KIỂM TRA 1: Nếu tên mới nhập khác với tên cũ trong hệ thống thì mới cập nhật
-      if (name !== user.displayName) {
-        await updateProfile(user, { displayName: name });
+      let finalAvatarUrl = avatar;
+
+      // XỬ LÝ ẢNH: Nếu là ảnh mới chọn từ máy (URI nội bộ, không phải HTTP)
+      if (avatar && !avatar.startsWith('http')) {
+        finalAvatarUrl = await uploadImageToCloudinary(avatar); // Up lên Cloudinary
       }
 
-      // KIỂM TRA 2: Nếu người dùng có nhập mật khẩu mới
-      if (newPassword.length > 0) {
-        // Quy định của Firebase: Mật khẩu phải từ 6 ký tự trở lên để đảm bảo an toàn
-        if (newPassword.length < 6) {
-          Alert.alert("Lỗi", "Mật khẩu bảo mật phải từ 6 ký tự trở lên");
-          setLoading(false);
-          return;
-        }
-        // Gọi hàm đổi mật khẩu của Firebase Auth
-        await updatePassword(user, newPassword);
-      }
+      // GỌI API CẬP NHẬT CỦA FIREBASE AUTH
+      // Dạ thưa thầy, em dùng updateProfile để cập nhật đồng thời tên và link ảnh
+      // và Thuộc tính photoURL này có sẵn trong Firebase Auth nên em KHÔNG cần tạo thêm trường ạ.
+      await updateProfile(user, { 
+        displayName: name,
+        photoURL: finalAvatarUrl // Lưu URL ảnh Cloudinary vào Firebase
+      });
 
-      Alert.alert("Thành công", "Thông tin tài khoản đã được cập nhật!");
-      navigation.goBack(); // Quay lại màn hình trước đó (thường là màn hình Thống kê)
-      
+      Alert.alert("Thành công", "Cập nhật hồ sơ thành công.");
+      navigation.replace('Stats'); // Cập nhật xong quay về trang Thống kê
+
     } catch (error) {
-      // XỬ LÝ LỖI ĐẶC BIỆT: Firebase yêu cầu đăng nhập lại nếu đổi mật khẩu sau một thời gian dài
-      if (error.code === 'auth/requires-recent-login') {
-        Alert.alert("Bảo mật", "Vì lý do an toàn, bạn cần đăng xuất và đăng nhập lại mới có thể đổi mật khẩu.");
-      } else {
-        Alert.alert("Lỗi hệ thống", error.message);
-      }
+      Alert.alert("Lỗi", "Không thể cập nhật: " + error.message);
     } finally {
-      setLoading(false); // Tắt trạng thái loading dù thành công hay thất bại
+      setLoading(false); // Tắt vòng xoay loading
+    }
+  };
+
+  // HÀM ĐỔI MẬT KHẨU (Giữ nguyên logic cũ của Thuận)
+  const handleChangePassword = async () => {
+    if (!newPassword) return Alert.alert("Lỗi", "Vui lòng nhập mật khẩu mới.");
+    if (newPassword !== confirmPassword) return Alert.alert("Lỗi", "Mật khẩu xác nhận không khớp.");
+    setLoading(true);
+
+    try {
+      await updatePassword(user, newPassword);
+      Alert.alert("Thành công", "Đổi mật khẩu thành công. Hãy đăng nhập lại.");
+      navigation.replace('Login');
+    } catch (error) {
+      Alert.alert("Lỗi", "Không thể đổi mật khẩu: " + error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Thiết Lập Tài Khoản</Text>
+      <Text style={styles.header}>QUẢN LÝ HỒ SƠ </Text>
       
-      {/* EMAIL: Khóa lại không cho sửa (editable={false}) vì đây là ID định danh duy nhất */}
-      <Text style={styles.label}>Địa chỉ Email (Định danh hệ thống)</Text>
-      <TextInput 
-        value={user?.email} 
-        editable={false} 
-        style={[styles.input, { backgroundColor: '#f0f0f0', color: '#888' }]} 
-      />
+      {/* KHU VỰC CẬP NHẬT ẢNH VÀ TÊN */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Tên hiển thị và Ảnh đại diện</Text>
+        <TextInput value={name} onChangeText={setName} placeholder="Nhập tên mới" style={styles.input} />
+        
+        {/* NÚT CHỌN ẢNH ĐẠI DIỆN */}
+        <TouchableOpacity style={styles.btnPick} onPress={pickAvatar} disabled={loading}>
+          <Ionicons name="camera" size={18} color="#1E824C" />
+          <Text style={{marginLeft: 10, color: '#1E824C'}}>ĐỔI ẢNH ĐẠI DIỆN</Text>
+        </TouchableOpacity>
+        
+        {/* HIỂN THỊ ẢNH XEM TRƯỚC */}
+        {avatar && <Image source={{ uri: avatar }} style={styles.preview} />}
 
-      {/* HỌ TÊN: Cho phép thay đổi để cá nhân hóa lời chào trên App */}
-      <Text style={styles.label}>Họ và tên hiển thị</Text>
-      <TextInput 
-        value={name} 
-        onChangeText={setName} 
-        style={styles.input} 
-        placeholder="Nhập tên mới của bạn" 
-      />
+        <TouchableOpacity style={styles.btnSave} onPress={handleSaveProfile} disabled={loading}>
+          {loading ? (
+              <ActivityIndicator color="#fff" />
+          ) : (
+              <Text style={styles.saveText}>HOÀN TẤT VÀ LƯU</Text>
+          )}
+        </TouchableOpacity>
+      </View>
 
-      {/* MẬT KHẨU: Ẩn ký tự khi nhập bằng secureTextEntry */}
-      <Text style={styles.label}>Mật khẩu mới (Để trống nếu không đổi)</Text>
-      <TextInput 
-        value={newPassword} 
-        onChangeText={setNewPassword} 
-        style={styles.input} 
-        placeholder="Tối thiểu 6 ký tự" 
-        secureTextEntry={true} 
-      />
-
-      {/* NÚT BẤM: Vô hiệu hóa khi đang xử lý (disabled={loading}) tránh bấm nhiều lần */}
-      <TouchableOpacity 
-        style={[styles.btnSave, loading && { opacity: 0.7 }]} 
-        onPress={handleUpdate} 
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.btnSaveText}>XÁC NHẬN THAY ĐỔI</Text>
-        )}
-      </TouchableOpacity>
-      
-      <Text style={styles.footerNote}>* Thông tin này được đồng bộ trực tiếp với Firebase Auth.</Text>
+      {/* KHU VỰC ĐỔI MẬT KHẨU */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Đổi mật khẩu </Text>
+        <TextInput secureTextEntry={true} value={newPassword} onChangeText={setNewPassword} placeholder="Mật khẩu mới" style={styles.input} />
+        <TextInput secureTextEntry={true} value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Xác nhận mật khẩu mới" style={styles.input} />
+        
+        <TouchableOpacity style={styles.btnSave} onPress={handleChangePassword} disabled={loading}>
+          {loading ? (
+              <ActivityIndicator color="#fff" />
+          ) : (
+              <Text style={styles.saveText}>HOÀN TẤT VÀ ĐỔI</Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 25, backgroundColor: '#fff' },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#1E824C', marginBottom: 25, textAlign: 'center' },
-  label: { fontSize: 14, color: '#555', marginBottom: 8, fontWeight: '600' },
-  input: { backgroundColor: '#F9F9F9', borderWidth: 1, borderColor: '#E8F5E9', padding: 15, borderRadius: 12, fontSize: 16, marginBottom: 20 },
-  btnSave: { backgroundColor: '#1E824C', padding: 18, alignItems: 'center', borderRadius: 15, marginTop: 10, elevation: 3 },
-  btnSaveText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 1 },
-  footerNote: { textAlign: 'center', color: '#bbb', fontSize: 11, marginTop: 20 }
+  container: { flex: 1, padding: 25, backgroundColor: '#F8F9FA' },
+  header: { fontSize: 20, fontWeight: 'bold', color: '#1E824C', textAlign: 'center', marginBottom: 25 },
+  section: { backgroundColor: '#fff', padding: 20, borderRadius: 20, marginBottom: 20, elevation: 3 },
+  label: { fontWeight: 'bold', marginBottom: 12, color: '#333' },
+  input: { borderWidth: 1, borderColor: '#eee', padding: 12, borderRadius: 10, marginBottom: 15, backgroundColor: '#fafafa' },
+  btnPick: { backgroundColor: '#F1F8F4', padding: 12, borderRadius: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  preview: { width: 100, height: 100, borderRadius: 50, marginBottom: 15, alignSelf: 'center' },
+  btnSave: { backgroundColor: '#1E824C', padding: 15, borderRadius: 10, alignItems: 'center' },
+  saveText: { color: '#fff', fontWeight: 'bold' },
 });

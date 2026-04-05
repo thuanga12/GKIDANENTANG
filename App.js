@@ -54,7 +54,7 @@ export default function App() {
         <Stack.Screen 
           name="AdminEdit" 
           component={AdminEditScreen} 
-          options={{ title: 'Chỉnh sửa Admin', headerTintColor: '#1E824C' }} 
+          options={{ title: 'Chỉnh sửa hồ sơ', headerTintColor: '#1E824C' }} 
         />
         
       </Stack.Navigator>

@@ -74,11 +74,19 @@ export default function ProductListScreen({ navigation }) {
             <Text style={styles.adminHello}>Xin chào,</Text>
             <Text style={styles.adminName}>{userName}</Text>
           </View>
-          <TouchableOpacity onPress={() => navigation.navigate('Stats')}>
-            <View style={styles.adminAvatarPlaceholder}>
-               {user?.photoURL ? <Image source={{uri: user.photoURL}} style={styles.avatarMini} /> : <Ionicons name="person" size={25} color="#1E824C" />}
-            </View>
-          </TouchableOpacity>
+        {/* Bấm vào Avatar để sang trang Thống kê/Hồ sơ */}
+<TouchableOpacity onPress={() => navigation.navigate('Stats')}>
+  <View style={styles.adminAvatarPlaceholder}>
+    {user?.photoURL ? (
+      <Image 
+        source={{ uri: user.photoURL }} 
+        style={styles.avatarMini} 
+      />
+    ) : (
+      <Ionicons name="person" size={24} color="#1E824C" />
+    )}
+  </View>
+</TouchableOpacity>
         </View>
 
         <Text style={styles.title}>Nông Sản Sạch</Text>
@@ -127,13 +135,14 @@ export default function ProductListScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
-      <FlatList
-        data={processedProducts} 
-        keyExtractor={(item) => item.id}
-        numColumns={2} // Hiển thị dạng lưới 2 cột chuyên nghiệp
-        ListHeaderComponent={ListHeader}
-        columnWrapperStyle={styles.row}
-        renderItem={({ item }) => (
+     <FlatList
+  data={processedProducts} // <-- Đây là nguồn dữ liệu (Danh sách đã lọc/sắp xếp)
+  keyExtractor={(item) => item.id} // <-- Mã định danh duy nhất cho mỗi dòng
+  numColumns={2} // <-- Chia danh sách thành 2 cột (Dạng lưới/Grid)
+  ListHeaderComponent={ListHeader} // <-- Phần đầu trang (Ảnh nền, Tìm kiếm)
+  columnWrapperStyle={styles.row} // <-- Căn chỉnh khoảng cách giữa các cột
+  renderItem={({ item }) => (
+    // ĐÂY LÀ KHU VỰC VẼ TỪNG CÁI THẺ (CARD) SẢN PHẨM
           <TouchableOpacity 
             style={styles.card}
             // PHÂN QUYỀN: Chỉ Admin mới được điều hướng sang Form để sửa
